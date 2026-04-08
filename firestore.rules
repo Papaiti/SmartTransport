@@ -1,0 +1,82 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields:
+    //   - uid: string (required, immutable)
+    //   - name: string (required)
+    //   - email: string (optional)
+    //   - role: string (required, enum: ['passenger', 'driver', 'admin'])
+    //
+    // Collection: vehicles
+    // Fields:
+    //   - id: string (required, plate number)
+    //   - type: string (required, enum: ['bus', 'minibus', 'taxi'])
+    //   - driverId: string (required, immutable)
+    //   - location: map (required, { lat: number, lng: number })
+    //   - totalSeats: number (required)
+    //   - availableSeats: number (required)
+    //   - destination: string (required)
+    //   - status: string (required, enum: ['active', 'inactive'])
+    //
+    // Collection: bookings
+    // Fields:
+    //   - passengerId: string (required, immutable)
+    //   - vehicleId: string (required, immutable)
+    //   - seatCount: number (required)
+    //   - status: string (required, enum: ['confirmed', 'completed', 'cancelled'])
+    //   - timestamp: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "wadanny28@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isDriver() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'driver';
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && request.resource.data.role == 'passenger';
+      allow update: if isOwner(userId) && request.resource.data.role == resource.data.role;
+      allow write: if isAdmin();
+    }
+
+    match /vehicles/{vehicleId} {
+      allow read: if isAuthenticated();
+      allow create: if isAdmin() || isDriver();
+      allow update: if isAdmin() || (isDriver() && resource.data.driverId == request.auth.uid);
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.passengerId || isAdmin() || isDriver());
+      allow create: if isAuthenticated() && request.resource.data.passengerId == request.auth.uid;
+      allow update: if isAdmin() || (isAuthenticated() && request.auth.uid == resource.data.passengerId);
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "Smart Transport Rwanda",
+  "description": "Real-time transport booking system with GPS tracking and seat availability for the Rwanda context.",
+  "requestFramePermissions": ["geolocation"]
+}

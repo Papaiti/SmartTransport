@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user of the transport system (Passenger, Driver, or Admin).",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Firebase Auth UID" },
+        "name": { "type": "string", "description": "Full name" },
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["passenger", "driver", "admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "name", "role"]
+    },
+    "Vehicle": {
+      "title": "Vehicle",
+      "description": "A transport vehicle (Bus, Minibus, or Taxi).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Plate number" },
+        "type": { "type": "string", "enum": ["bus", "minibus", "taxi"] },
+        "driverId": { "type": "string", "description": "UID of the driver" },
+        "location": { "type": "object", "description": "Current GPS coordinates" },
+        "totalSeats": { "type": "integer" },
+        "availableSeats": { "type": "integer" },
+        "destination": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "inactive"] },
+        "lastUpdated": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "type", "driverId", "totalSeats", "availableSeats", "destination", "status"]
+    },
+    "Booking": {
+      "title": "Booking",
+      "description": "A seat reservation made by a passenger.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "passengerId": { "type": "string" },
+        "vehicleId": { "type": "string" },
+        "seatCount": { "type": "integer" },
+        "status": { "type": "string", "enum": ["confirmed", "completed", "cancelled"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["passengerId", "vehicleId", "seatCount", "status", "timestamp"]
+    },
+    "Route": {
+      "title": "Route",
+      "description": "A defined transport route.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "startHub": { "type": "string" },
+        "endHub": { "type": "string" },
+        "baseFare": { "type": "integer" }
+      },
+      "required": ["id", "name", "startHub", "endHub", "baseFare"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": { "schema": "User", "description": "User profile data" },
+    "/vehicles/{vehicleId}": { "schema": "Vehicle", "description": "Real-time vehicle data" },
+    "/bookings/{bookingId}": { "schema": "Booking", "description": "Seat reservation records" },
+    "/routes/{routeId}": { "schema": "Route", "description": "Transport route definitions" }
+  }
+}
