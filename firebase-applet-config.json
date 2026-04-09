@@ -1,9 +1,0 @@
-{
-  "apiKey": "PLACEHOLDER_API_KEY",
-  "authDomain": "placeholder-project.firebaseapp.com",
-  "projectId": "placeholder-project",
-  "storageBucket": "placeholder-project.appspot.com",
-  "messagingSenderId": "123456789",
-  "appId": "1:123456789:web:abcdef",
-  "firestoreDatabaseId": "(default)"
-}

@@ -1,17 +1,21 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { auth, db, googleProvider, signInWithPopup, onAuthStateChanged, handleFirestoreError, OperationType, runTransaction, increment, isFirebaseConfigured } from './lib/firebase';
-import { collection, onSnapshot, query, where, doc, setDoc, updateDoc, addDoc, Timestamp } from 'firebase/firestore';
-import { User as FirebaseUser } from 'firebase/auth';
 import { calculateDistance, formatDistance, KIGALI_HUBS, Location } from './lib/geo';
 import ErrorBoundary from './components/ErrorBoundary';
 import Map from './components/Map';
 import { Bus, User, LogIn, LogOut, MapPin, Users, Navigation, CheckCircle2, AlertCircle, RefreshCcw, Map as MapIcon, Ticket as TicketIcon, Route as RouteIcon, Settings, QrCode, Calendar, Clock, CreditCard, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
-interface UserProfile {
+export interface UserProfile {
   uid: string;
   name: string;
-  role: 'passenger' | 'driver' | 'admin';
+  role: 'passenger' | 'driver' | 'admin' | 'agent';
+}
+
+interface User {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL?: string | null;
 }
 
 interface Vehicle {
@@ -31,12 +35,213 @@ interface Booking {
   vehicleId: string;
   seatCount: number;
   status: 'confirmed' | 'completed' | 'cancelled';
+  bookingPlace: string;
+  destination: string;
   timestamp: any;
 }
 
+function AuthScreen({ onLogin, mode, setMode, role, setRole }: { 
+  onLogin: () => void, 
+  mode: 'login' | 'signup', 
+  setMode: (m: 'login' | 'signup') => void,
+  role: 'passenger' | 'agent',
+  setRole: (r: 'passenger' | 'agent') => void
+}) {
+  return (
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-md bg-white rounded-[2rem] shadow-2xl border border-slate-100 overflow-hidden"
+      >
+        <div className="bg-blue-600 p-8 text-white text-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl" />
+          <div className="absolute bottom-0 left-0 w-24 h-24 bg-blue-400/20 rounded-full -ml-12 -mb-12 blur-xl" />
+          
+          <div className="relative z-10 flex flex-col items-center gap-4">
+            <div className="bg-white p-3 rounded-2xl shadow-lg">
+              <Bus className="w-8 h-8 text-blue-600" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight">SmartTransport</h1>
+              <p className="text-blue-100 text-xs font-medium uppercase tracking-widest mt-1">Rwanda Transit System</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-8">
+          <div className="flex bg-slate-100 p-1 rounded-xl mb-8">
+            <button 
+              onClick={() => setMode('login')}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${mode === 'login' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              Login
+            </button>
+            <button 
+              onClick={() => setMode('signup')}
+              className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${mode === 'signup' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}
+            >
+              Sign Up
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            {mode === 'signup' && (
+              <div>
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Select Your Role</label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button 
+                    onClick={() => setRole('passenger')}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${role === 'passenger' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'}`}
+                  >
+                    <User className="w-6 h-6" />
+                    <span className="text-xs font-bold">Passenger</span>
+                  </button>
+                  <button 
+                    onClick={() => setRole('agent')}
+                    className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${role === 'agent' ? 'border-blue-600 bg-blue-50 text-blue-600' : 'border-slate-100 bg-slate-50 text-slate-400 hover:border-slate-200'}`}
+                  >
+                    <Users className="w-6 h-6" />
+                    <span className="text-xs font-bold">Agent</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Email Address</label>
+                <input 
+                  type="email" 
+                  placeholder="name@example.com"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Password</label>
+                <input 
+                  type="password" 
+                  placeholder="••••••••"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-xl py-3 px-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
+            </div>
+
+            <button 
+              onClick={onLogin}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-blue-200 transition-all active:scale-[0.98]"
+            >
+              {mode === 'login' ? 'Sign In' : 'Create Account'}
+            </button>
+
+            <div className="relative py-4">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-slate-100"></div>
+              </div>
+              <div className="relative flex justify-center text-[10px] uppercase tracking-widest font-bold">
+                <span className="bg-white px-4 text-slate-400">Or continue with</span>
+              </div>
+            </div>
+
+            <button 
+              onClick={onLogin}
+              className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 py-3.5 rounded-2xl font-bold text-sm transition-all flex items-center justify-center gap-3"
+            >
+              <svg className="w-5 h-5" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+              </svg>
+              Google Account
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-slate-50 p-6 border-t border-slate-100 text-center">
+          <p className="text-xs text-slate-500">
+            {mode === 'login' ? "Don't have an account?" : "Already have an account?"}
+            <button 
+              onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+              className="ml-1 text-blue-600 font-bold hover:underline"
+            >
+              {mode === 'login' ? 'Sign up' : 'Log in'}
+            </button>
+          </p>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+function PaymentModal({ isOpen, onClose, onConfirm, vehicleId, fare }: { 
+  isOpen: boolean, 
+  onClose: () => void, 
+  onConfirm: () => void,
+  vehicleId: string | null,
+  fare: number
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        className="w-full max-w-sm bg-white rounded-[2rem] shadow-2xl overflow-hidden"
+      >
+        <div className="bg-blue-600 p-6 text-white text-center">
+          <div className="bg-white/20 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
+            <CreditCard className="w-6 h-6" />
+          </div>
+          <h3 className="text-xl font-bold">Payment Required</h3>
+          <p className="text-blue-100 text-xs mt-1">Confirm your transfer to finalize booking</p>
+        </div>
+        
+        <div className="p-8 space-y-6">
+          <div className="bg-slate-50 p-4 rounded-2xl space-y-3">
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Vehicle</span>
+              <span className="font-bold">{vehicleId}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500">Fare</span>
+              <span className="font-bold text-blue-600">{fare} RWF</span>
+            </div>
+            <div className="h-px bg-slate-200" />
+            <div className="flex justify-between text-base">
+              <span className="font-bold">Total</span>
+              <span className="font-bold text-blue-600">{fare} RWF</span>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <button 
+              onClick={onConfirm}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-2xl font-bold text-sm shadow-lg shadow-blue-200 transition-all active:scale-[0.98]"
+            >
+              Confirm Transfer
+            </button>
+            <button 
+              onClick={onClose}
+              className="w-full bg-white border border-slate-200 hover:bg-slate-50 text-slate-500 py-3.5 rounded-2xl font-bold text-sm transition-all"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function App() {
-  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [selectedRole, setSelectedRole] = useState<'passenger' | 'agent'>('passenger');
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [userLocation, setUserLocation] = useState<Location>(KIGALI_HUBS.DOWNTOWN);
@@ -48,11 +253,23 @@ export default function App() {
   const [viewingTicket, setViewingTicket] = useState<Booking | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<'all' | 'bus' | 'minibus' | 'taxi'>('all');
-  const [routes, setRoutes] = useState<any[]>([
-    { id: 'R1', name: 'Nyabugogo - Kimironko', startHub: 'NYABUGOGO', endHub: 'KIMIRONKO', baseFare: 500 },
-    { id: 'R2', name: 'Downtown - Remera', startHub: 'DOWNTOWN', endHub: 'REMERA', baseFare: 400 },
-    { id: 'R3', name: 'Nyabugogo - Downtown', startHub: 'NYABUGOGO', endHub: 'DOWNTOWN', baseFare: 300 },
-  ]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [pendingVehicleId, setPendingVehicleId] = useState<string | null>(null);
+  const [routes, setRoutes] = useState<any[]>([]);
+
+  // Fetch Routes
+  useEffect(() => {
+    const fetchRoutes = async () => {
+      try {
+        const res = await fetch('/api/routes');
+        const data = await res.json();
+        setRoutes(data);
+      } catch (error) {
+        console.error("Failed to fetch routes", error);
+      }
+    };
+    fetchRoutes();
+  }, []);
 
   // Keep selected vehicle updated if its data changes in the vehicles list
   const activeSelectedVehicle = useMemo(() => {
@@ -62,90 +279,50 @@ export default function App() {
 
   // Auth Listener
   useEffect(() => {
-    if (!isFirebaseConfigured) {
-      // Mock user for demo mode
-      setUser({
-        uid: 'demo-user-123',
-        displayName: 'Guest Passenger',
-        email: 'guest@example.com',
-        photoURL: null,
-      } as any);
-      setProfile({
-        uid: 'demo-user-123',
-        name: 'Guest Passenger',
-        role: 'passenger'
-      });
-      return;
+    const savedUser = localStorage.getItem('demo_user');
+    if (savedUser) {
+      const parsed = JSON.parse(savedUser);
+      setUser(parsed.user);
+      setProfile(parsed.profile);
     }
-
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setUser(firebaseUser);
-      if (firebaseUser) {
-        // Fetch or create profile
-        const profileRef = doc(db, 'users', firebaseUser.uid);
-        try {
-          // In a real app, we'd check if it exists first. For this demo, we'll auto-create.
-          const newProfile: UserProfile = {
-            uid: firebaseUser.uid,
-            name: firebaseUser.displayName || 'User',
-            role: 'passenger'
-          };
-          await setDoc(profileRef, newProfile, { merge: true });
-          setProfile(newProfile);
-        } catch (error) {
-          handleFirestoreError(error, OperationType.WRITE, 'users');
-        }
-      } else {
-        setProfile(null);
-      }
-    });
-    return () => unsubscribe();
+    setIsAuthLoading(false);
   }, []);
 
-  // Real-time Vehicles Listener
+  // Real-time Vehicles Listener (Polling for SQL)
   useEffect(() => {
-    if (!isFirebaseConfigured) {
-      // Initial mock vehicles for demo mode
-      const mockVehicles: Vehicle[] = [
-        { id: 'RAA 123 A', type: 'bus', driverId: 'd1', location: KIGALI_HUBS.NYABUGOGO, totalSeats: 30, availableSeats: 12, destination: 'Musanze', status: 'active' },
-        { id: 'RAB 456 B', type: 'minibus', driverId: 'd2', location: KIGALI_HUBS.KIMIRONKO, totalSeats: 18, availableSeats: 5, destination: 'Rubavu', status: 'active' },
-        { id: 'RAC 789 C', type: 'taxi', driverId: 'd3', location: KIGALI_HUBS.REMERA, totalSeats: 4, availableSeats: 2, destination: 'Airport', status: 'active' },
-        { id: 'RAD 012 D', type: 'bus', driverId: 'd4', location: KIGALI_HUBS.DOWNTOWN, totalSeats: 30, availableSeats: 0, destination: 'Nyamirambo', status: 'active' },
-      ];
-      setVehicles(mockVehicles);
-      return;
-    }
+    const fetchVehicles = async () => {
+      try {
+        const res = await fetch('/api/vehicles');
+        const data = await res.json();
+        setVehicles(data);
+      } catch (error) {
+        console.error("Failed to fetch vehicles", error);
+      }
+    };
 
-    const q = query(collection(db, 'vehicles'), where('status', '==', 'active'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const vehicleData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Vehicle));
-      setVehicles(vehicleData);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'vehicles');
-    });
-    return () => unsubscribe();
+    fetchVehicles();
+    const interval = setInterval(fetchVehicles, 5000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Real-time Bookings Listener (for current user)
+  // Real-time Bookings Listener (Polling for SQL)
   useEffect(() => {
-    if (!user) return;
-    if (!isFirebaseConfigured) {
-      const savedBookings = localStorage.getItem('demo_bookings');
-      if (savedBookings) {
-        setBookings(JSON.parse(savedBookings));
+    if (!user || !profile) return;
+    
+    const fetchBookings = async () => {
+      try {
+        const res = await fetch(`/api/bookings?passengerId=${user.uid}&role=${profile.role}`);
+        const data = await res.json();
+        setBookings(data);
+      } catch (error) {
+        console.error("Failed to fetch bookings", error);
       }
-      return;
-    }
+    };
 
-    const q = query(collection(db, 'bookings'), where('passengerId', '==', user.uid));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const bookingData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Booking));
-      setBookings(bookingData);
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'bookings');
-    });
-    return () => unsubscribe();
-  }, [user]);
+    fetchBookings();
+    const interval = setInterval(fetchBookings, 5000);
+    return () => clearInterval(interval);
+  }, [user, profile]);
 
   // GPS Simulation (User Location)
   useEffect(() => {
@@ -183,95 +360,85 @@ export default function App() {
   }, [filteredVehicles, userLocation]);
 
   const handleLogin = async () => {
+    const mockUser = {
+      uid: 'user-' + Math.random().toString(36).substr(2, 5),
+      displayName: 'Demo User',
+      email: 'demo@example.com',
+    };
+    const mockProfile: UserProfile = {
+      uid: mockUser.uid,
+      name: mockUser.displayName,
+      role: selectedRole as any
+    };
+
     try {
-      await signInWithPopup(auth, googleProvider);
+      await fetch('/api/auth/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mockProfile)
+      });
+      
+      setUser(mockUser as any);
+      setProfile(mockProfile);
+      localStorage.setItem('demo_user', JSON.stringify({ user: mockUser, profile: mockProfile }));
     } catch (error) {
       console.error("Login failed", error);
     }
   };
 
-  const handleLogout = () => auth.signOut();
+  const handleLogout = () => {
+    setUser(null);
+    setProfile(null);
+    localStorage.removeItem('demo_user');
+  };
 
-  const handleBooking = async (vehicleId: string) => {
+  const initiateBooking = (vehicleId: string) => {
     if (!user) return;
-    setIsBooking(true);
-    setBookingStatus('loading');
-
-    if (!isFirebaseConfigured) {
-      // Local fallback booking
-      setTimeout(() => {
-        const newBooking: Booking = {
-          id: `BK-${Math.random().toString(36).substr(2, 9)}`,
-          passengerId: user.uid,
-          vehicleId: vehicleId,
-          seatCount: 1,
-          status: 'confirmed',
-          timestamp: new Date().toISOString()
-        };
-        
-        const updatedBookings = [newBooking, ...bookings];
-        setBookings(updatedBookings);
-        localStorage.setItem('demo_bookings', JSON.stringify(updatedBookings));
-        
-        // Update local vehicle seats
-        setVehicles(prev => prev.map(v => 
-          v.id === vehicleId ? { ...v, availableSeats: Math.max(0, v.availableSeats - 1) } : v
-        ));
-
-        setBookingStatus('success');
-        setViewingTicket(newBooking);
-        setIsBooking(false);
-        
-        setTimeout(() => {
-          setBookingStatus('idle');
-          setSelectedVehicle(null);
-        }, 3000);
-      }, 1000);
+    
+    // Single booking at a time check
+    const hasActiveBooking = bookings.some(b => b.status === 'confirmed');
+    if (hasActiveBooking) {
+      alert("You already have an active booking. Please complete or cancel it first.");
       return;
     }
 
+    setPendingVehicleId(vehicleId);
+    setShowPaymentModal(true);
+  };
+
+  const handleBooking = async (vehicleId: string) => {
+    if (!user) return;
+    
+    setIsBooking(true);
+    setBookingStatus('loading');
+    setShowPaymentModal(false);
+
+    const vehicle = vehicles.find(v => v.id === vehicleId);
+    const bookingPlace = "Current Location"; // In a real app, reverse geocode userLocation
+    const destination = vehicle?.destination || "Unknown";
+
+    const newBooking: Booking = {
+      id: `BK-${Math.random().toString(36).substr(2, 9)}`,
+      passengerId: user.uid,
+      vehicleId: vehicleId,
+      seatCount: 1,
+      status: 'confirmed',
+      bookingPlace,
+      destination,
+      timestamp: new Date().toISOString()
+    };
+
     try {
-      const vehicleRef = doc(db, 'vehicles', vehicleId);
-      const bookingRef = collection(db, 'bookings');
-
-      await runTransaction(db, async (transaction) => {
-        const vehicleDoc = await transaction.get(vehicleRef);
-        if (!vehicleDoc.exists()) {
-          throw new Error("Vehicle not found");
-        }
-
-        const vehicleData = vehicleDoc.data() as Vehicle;
-        if (vehicleData.availableSeats <= 0) {
-          throw new Error("No seats available");
-        }
-
-        // 1. Create Booking
-        const newBookingDoc = doc(bookingRef);
-        transaction.set(newBookingDoc, {
-          passengerId: user.uid,
-          vehicleId: vehicleId,
-          seatCount: 1,
-          status: 'confirmed',
-          timestamp: Timestamp.now()
-        });
-
-        // 2. Decrement Available Seats
-        transaction.update(vehicleRef, {
-          availableSeats: increment(-1)
-        });
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newBooking)
       });
 
+      if (!res.ok) throw new Error("Booking failed");
+
       setBookingStatus('success');
-      // Show the ticket immediately after success
-      const latestBooking = {
-        id: 'NEW', // Temporary ID for immediate view
-        passengerId: user.uid,
-        vehicleId: vehicleId,
-        seatCount: 1,
-        status: 'confirmed' as const,
-        timestamp: Timestamp.now()
-      };
-      setViewingTicket(latestBooking);
+      setViewingTicket(newBooking);
       
       setTimeout(() => {
         setBookingStatus('idle');
@@ -280,11 +447,6 @@ export default function App() {
     } catch (error) {
       console.error("Booking failed", error);
       setBookingStatus('error');
-      // Surface error to user
-      if (error instanceof Error) {
-        // We could use handleFirestoreError here if it was a permission issue, 
-        // but this handles business logic errors too.
-      }
     } finally {
       setIsBooking(false);
     }
@@ -295,46 +457,36 @@ export default function App() {
     if (!user) return;
     const vehicleId = `RAA ${Math.floor(100 + Math.random() * 900)} ${String.fromCharCode(65 + Math.floor(Math.random() * 26))}`;
     
-    if (!isFirebaseConfigured) {
-      const newVehicle: Vehicle = {
-        id: vehicleId,
-        type: 'bus',
-        driverId: user.uid,
-        location: { 
-          lat: KIGALI_HUBS.NYABUGOGO.lat + (Math.random() - 0.5) * 0.01, 
-          lng: KIGALI_HUBS.NYABUGOGO.lng + (Math.random() - 0.5) * 0.01 
-        },
-        totalSeats: 30,
-        availableSeats: Math.floor(Math.random() * 30),
-        destination: "Kigali - Musanze",
-        status: 'active'
-      };
-      setVehicles(prev => [newVehicle, ...prev.filter(v => v.id !== vehicleId)]);
-      return;
-    }
-
-    const vehicleRef = doc(db, 'vehicles', vehicleId);
-    
     // Random movement near Nyabugogo
     const newLat = KIGALI_HUBS.NYABUGOGO.lat + (Math.random() - 0.5) * 0.01;
     const newLng = KIGALI_HUBS.NYABUGOGO.lng + (Math.random() - 0.5) * 0.01;
 
-    try {
-      await setDoc(vehicleRef, {
-        id: vehicleId,
-        type: 'bus',
-        driverId: user.uid,
-        location: { lat: newLat, lng: newLng },
-        totalSeats: 30,
-        availableSeats: Math.floor(Math.random() * 30),
-        destination: "Kigali - Musanze",
-        status: 'active',
-        lastUpdated: Timestamp.now()
-      }, { merge: true });
-    } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, 'vehicles');
-    }
+    // This is a mock update, in a real app we'd have a dedicated driver API
+    console.log("Simulating driver update for", vehicleId);
   };
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <RefreshCcw className="w-8 h-8 text-blue-600 animate-spin" />
+          <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Loading System...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <AuthScreen 
+        onLogin={handleLogin} 
+        mode={authMode} 
+        setMode={setAuthMode}
+        role={selectedRole}
+        setRole={setSelectedRole}
+      />
+    );
+  }
 
   return (
     <ErrorBoundary>
@@ -355,7 +507,7 @@ export default function App() {
           <nav className="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
             {[
               { id: 'map', icon: MapIcon, label: 'Map' },
-              { id: 'tickets', icon: TicketIcon, label: 'Tickets' },
+              { id: 'tickets', icon: TicketIcon, label: profile?.role === 'agent' ? 'All Bookings' : 'My Tickets' },
               { id: 'routes', icon: RouteIcon, label: 'Routes' },
             ].map((tab) => (
               <button
@@ -374,12 +526,6 @@ export default function App() {
           </nav>
 
           <div className="flex items-center gap-4">
-            {!isFirebaseConfigured && (
-              <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-amber-50 border border-amber-200 rounded-full text-amber-700 text-[10px] font-bold uppercase tracking-wider">
-                <AlertCircle className="w-3 h-3" />
-                Demo Mode (Local)
-              </div>
-            )}
             {user ? (
               <div className="flex items-center gap-3">
                 <div className="text-right hidden sm:block">
@@ -410,6 +556,18 @@ export default function App() {
         </header>
 
         <main className="max-w-7xl mx-auto p-4 sm:p-6 pb-24 md:pb-6">
+          {/* Onboarding / Welcome */}
+          <div className="mb-8">
+            <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+              Welcome, {profile?.name}!
+            </h2>
+            <p className="text-slate-500 mt-1">
+              {profile?.role === 'agent' 
+                ? 'System Overview: Monitor all active vehicles and passenger bookings across Kigali.'
+                : 'Ready to travel? Find the nearest bus and book your seat in one tap.'}
+            </p>
+          </div>
+
           <AnimatePresence mode="wait">
             {activeTab === 'map' && (
               <motion.div 
@@ -511,12 +669,12 @@ export default function App() {
                         <button 
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleBooking(vehicle.id);
+                            initiateBooking(vehicle.id);
                           }}
-                          disabled={isBooking || vehicle.availableSeats <= 0}
+                          disabled={vehicle.availableSeats <= 0}
                           className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-bold text-xs transition-all shadow-lg shadow-blue-200 active:scale-95 disabled:opacity-50"
                         >
-                          {isBooking ? 'Processing...' : 'Book Seat Now'}
+                          Book Seat Now
                         </button>
                       </motion.div>
                     ))}
@@ -543,12 +701,6 @@ export default function App() {
                           <p className="text-[10px] text-slate-500 leading-relaxed">
                             We prioritize vehicles with available seats and proximity to your current location.
                           </p>
-                          {!isFirebaseConfigured && (
-                            <div className="mt-2 flex items-center gap-1.5 text-[9px] text-amber-600 font-bold uppercase tracking-wider">
-                              <AlertCircle className="w-3 h-3" />
-                              Local Simulation Mode
-                            </div>
-                          )}
                         </div>
                       </div>
                     </div>
@@ -587,7 +739,7 @@ export default function App() {
                             </div>
                           </div>
                           <button 
-                            onClick={() => handleBooking(activeSelectedVehicle.id)}
+                            onClick={() => initiateBooking(activeSelectedVehicle.id)}
                             className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold"
                           >
                             Confirm Booking
@@ -609,9 +761,16 @@ export default function App() {
                 className="max-w-2xl mx-auto space-y-6"
               >
                 <div className="flex items-center justify-between mb-2">
-                  <h2 className="text-2xl font-bold">My Tickets</h2>
-                  <span className="bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-xs font-bold">{bookings.length} Active</span>
+                  <h2 className="text-2xl font-bold">{profile?.role === 'agent' ? 'Global Bookings' : 'My Tickets'}</h2>
+                  <span className="bg-blue-100 text-blue-600 px-3 py-1 rounded-full text-xs font-bold">{bookings.length} {profile?.role === 'agent' ? 'Total' : 'Active'}</span>
                 </div>
+
+                {profile?.role === 'agent' && (
+                  <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-center gap-3 text-amber-800 text-xs font-medium mb-4">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>Agent View: You are seeing all bookings made across the system.</span>
+                  </div>
+                )}
 
                 {bookings.length > 0 ? (
                   <div className="grid grid-cols-1 gap-4">
@@ -837,18 +996,39 @@ export default function App() {
 
                 {/* Ticket Body */}
                 <div className="p-8 space-y-6">
-                  <div className="flex items-center justify-between">
+                  <div className="grid grid-cols-2 gap-6">
                     <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Vehicle</p>
-                      <p className="text-xl font-bold text-slate-900">{viewingTicket.vehicleId}</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Vehicle</p>
+                      <p className="text-lg font-bold text-slate-900">{viewingTicket.vehicleId}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Seat</p>
-                      <p className="text-xl font-bold text-blue-600">01 (Reserved)</p>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Seat</p>
+                      <p className="text-lg font-bold text-blue-600">01 (Reserved)</p>
                     </div>
                   </div>
 
                   <div className="h-px bg-dashed border-t-2 border-dashed border-slate-100" />
+
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-slate-50 rounded-lg text-slate-400">
+                        <MapPin className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">From</p>
+                        <p className="text-sm font-bold text-slate-900">{viewingTicket.bookingPlace}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-slate-50 rounded-lg text-slate-400">
+                        <Navigation className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">To</p>
+                        <p className="text-sm font-bold text-slate-900">{viewingTicket.destination}</p>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="grid grid-cols-2 gap-6">
                     <div className="flex items-center gap-3">
@@ -906,6 +1086,26 @@ export default function App() {
                 </div>
               </motion.div>
             </div>
+          )}
+        </AnimatePresence>
+        {/* Payment Modal */}
+        <AnimatePresence>
+          {showPaymentModal && (
+            <PaymentModal 
+              isOpen={showPaymentModal}
+              onClose={() => setShowPaymentModal(false)}
+              onConfirm={() => pendingVehicleId && handleBooking(pendingVehicleId)}
+              vehicleId={pendingVehicleId}
+              fare={(() => {
+                const vehicle = vehicles.find(v => v.id === pendingVehicleId);
+                if (!vehicle) return 500;
+                const route = routes.find(r => 
+                  vehicle.destination.toLowerCase().includes(r.endHub.toLowerCase()) || 
+                  r.name.toLowerCase().includes(vehicle.destination.toLowerCase())
+                );
+                return route ? route.baseFare : 500;
+              })()}
+            />
           )}
         </AnimatePresence>
       </div>
